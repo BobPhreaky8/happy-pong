@@ -88,6 +88,7 @@ resize();
 // performs expensive floating-point calculations. The internal render
 // resolution is deliberately much larger than the visible canvas.
 const stressCanvas = document.createElement("canvas");
+
 const gl =
     stressCanvas.getContext("webgl2", {
         antialias: false,
@@ -104,74 +105,124 @@ const gl =
         powerPreference: "high-performance"
     });
 
-let gpuStressEnabled = !!gl;
 
-if (gpuStressEnabled) {
-    const stressVertexSource = `
+// ====================================================
+// GPU STRESS
+// ====================================================
+
+if (gl) {
+
+    const vertexSource = `
         attribute vec2 a_position;
+
         void main() {
             gl_Position = vec4(a_position, 0.0, 1.0);
         }
     `;
 
-    const stressFragmentSource = `
+    const fragmentSource = `
         precision highp float;
+
         uniform float u_time;
 
         void main() {
-            vec2 p = gl_FragCoord.xy;
-            float v = 0.137;
 
-            // Many dependent floating-point operations per pixel.
-            for (int i = 0; i < 180; i++) {
-                v = sin(v * 1.731 + p.x * 0.000013 + u_time);
-                v = cos(v * 2.117 + p.y * 0.000017);
+            vec2 p = gl_FragCoord.xy;
+
+            float a = p.x * 0.000017;
+            float b = p.y * 0.000013;
+
+            float v = 0.1234567;
+
+            // Extremely expensive dependent calculations.
+            for (int i = 0; i < 700; i++) {
+
+                v = sin(v * 1.731 + a + u_time);
+                v = cos(v * 2.117 + b);
+
+                v = sin(v * 3.731 + a);
+                v = cos(v * 4.217 + b);
+
                 v = sqrt(abs(v) + 0.000001);
-                v = v * v + 0.00031;
-                v = fract(v * 19.731);
-                p = vec2(
-                    p.x * 0.99991 + v * 13.7,
-                    p.y * 0.99989 - v * 11.3
-                );
+
+                v = v * v;
+                v = v * 1.000013 + 0.000031;
+
+                v = fract(v * 17.731);
+
+                a = a * 0.99991 + v * 0.137;
+                b = b * 0.99989 - v * 0.113;
+
+                v = sin(v * 5.731 + a);
+                v = cos(v * 6.117 + b);
+
+                v = sqrt(abs(v) + 0.000001);
+                v = fract(v * 23.731);
             }
 
-            gl_FragColor = vec4(v, fract(v * 3.17), fract(v * 7.31), 1.0);
+            gl_FragColor = vec4(
+                fract(v),
+                fract(v * 3.17),
+                fract(v * 7.31),
+                1.0
+            );
         }
     `;
 
+
     function compileShader(type, source) {
+
         const shader = gl.createShader(type);
+
         gl.shaderSource(shader, source);
         gl.compileShader(shader);
 
         if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+
             console.error(gl.getShaderInfoLog(shader));
+
             gl.deleteShader(shader);
+
             return null;
         }
+
         return shader;
     }
 
-    const vs = compileShader(gl.VERTEX_SHADER, stressVertexSource);
-    const fs = compileShader(gl.FRAGMENT_SHADER, stressFragmentSource);
 
-    if (vs && fs) {
+    const vertexShader =
+        compileShader(gl.VERTEX_SHADER, vertexSource);
+
+    const fragmentShader =
+        compileShader(gl.FRAGMENT_SHADER, fragmentSource);
+
+
+    if (vertexShader && fragmentShader) {
+
         const program = gl.createProgram();
-        gl.attachShader(program, vs);
-        gl.attachShader(program, fs);
+
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+
         gl.linkProgram(program);
 
+
         if (gl.getProgramParameter(program, gl.LINK_STATUS)) {
+
             gl.useProgram(program);
 
+
             const buffer = gl.createBuffer();
+
             gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+
             gl.bufferData(
                 gl.ARRAY_BUFFER,
                 new Float32Array([
                     -1, -1,
                      1, -1,
                     -1,  1,
+
                     -1,  1,
                      1, -1,
                      1,  1
@@ -179,80 +230,290 @@ if (gpuStressEnabled) {
                 gl.STATIC_DRAW
             );
 
-            const position = gl.getAttribLocation(program, "a_position");
-            gl.enableVertexAttribArray(position);
-            gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
 
-            const timeLocation = gl.getUniformLocation(program, "u_time");
+            const position =
+                gl.getAttribLocation(
+                    program,
+                    "a_position"
+                );
+
+            gl.enableVertexAttribArray(position);
+
+            gl.vertexAttribPointer(
+                position,
+                2,
+                gl.FLOAT,
+                false,
+                0,
+                0
+            );
+
+
+            const timeLocation =
+                gl.getUniformLocation(
+                    program,
+                    "u_time"
+                );
+
 
             function resizeStressTarget() {
-                // Deliberately render substantially more pixels than the screen.
-                const scale = Math.max(2.5, Math.min(4.0, devicePixelRatio * 2.0));
-                stressCanvas.width = Math.max(
-                    2048,
-                    Math.floor(window.innerWidth * scale)
+
+                /*
+                 * Large internal render target.
+                 *
+                 * This is deliberately much larger
+                 * than the visible game.
+                 */
+
+                const scale =
+                    Math.max(
+                        3.0,
+                        Math.min(
+                            5.0,
+                            devicePixelRatio * 3.0
+                        )
+                    );
+
+                stressCanvas.width =
+                    Math.max(
+                        3072,
+                        Math.floor(
+                            window.innerWidth * scale
+                        )
+                    );
+
+                stressCanvas.height =
+                    Math.max(
+                        3072,
+                        Math.floor(
+                            window.innerHeight * scale
+                        )
+                    );
+
+                gl.viewport(
+                    0,
+                    0,
+                    stressCanvas.width,
+                    stressCanvas.height
                 );
-                stressCanvas.height = Math.max(
-                    2048,
-                    Math.floor(window.innerHeight * scale)
-                );
-                gl.viewport(0, 0, stressCanvas.width, stressCanvas.height);
             }
+
 
             resizeStressTarget();
-            window.addEventListener("resize", resizeStressTarget);
 
-            let stressTime = 0;
+            window.addEventListener(
+                "resize",
+                resizeStressTarget
+            );
+
 
             function gpuStressLoop(now) {
-                stressTime = now * 0.001;
-                gl.uniform1f(timeLocation, stressTime);
 
-                // Several complete fullscreen shader passes per animation frame.
-                // No FPS cap and no automatic stopping.
-                for (let pass = 0; pass < 6; pass++) {
-                    gl.drawArrays(gl.TRIANGLES, 0, 6);
-                    gl.flush();
+                gl.uniform1f(
+                    timeLocation,
+                    now * 0.001
+                );
+
+
+                /*
+                 * Multiple complete 700-iteration
+                 * fullscreen shader passes.
+                 */
+
+                for (let pass = 0; pass < 12; pass++) {
+
+                    gl.drawArrays(
+                        gl.TRIANGLES,
+                        0,
+                        6
+                    );
                 }
 
-                requestAnimationFrame(gpuStressLoop);
+
+                /*
+                 * Force commands toward the GPU.
+                 */
+
+                gl.flush();
+
+                requestAnimationFrame(
+                    gpuStressLoop
+                );
             }
 
-            requestAnimationFrame(gpuStressLoop);
+
+            requestAnimationFrame(
+                gpuStressLoop
+            );
         }
     }
 }
 
-// Also keep every logical CPU thread busy, but avoid enormous BigInt
-// allocations so the browser remains responsive enough to display the game.
+
+// ====================================================
+// EXTREME CPU STRESS
+// ====================================================
+
 const workerCode = `
-function mathematical_workload() {
-    while (true) {
-        let x = 0.123456789;
 
-        for (let i = 0; i < 30000000; i++) {
-            x = Math.sin(x) * 1.0000001 + Math.cos(x * 1.37);
-            x = Math.sqrt(Math.abs(x) + 0.0000001);
+"use strict";
+
+
+function cpuStress() {
+
+    /*
+     * Keep each worker continuously occupied.
+     */
+
+    let seed = Math.random() * 1000;
+
+
+    while (true) {
+
+        let x = seed;
+
+        let y = 0.731;
+        let z = 1.137;
+
+
+        /*
+         * Huge batch of floating point calculations.
+         */
+
+        for (let i = 0; i < 50000000; i++) {
+
+            x = Math.sin(x + y);
+            y = Math.cos(y + z);
+
+            z = Math.sqrt(
+                Math.abs(
+                    z * x
+                ) + 0.0000001
+            );
+
+
+            x = x * 1.0000001 + z;
+            y = y * 0.9999999 - x;
+
+
+            x = Math.sin(
+                x * 1.731
+            );
+
+            y = Math.cos(
+                y * 2.117
+            );
+
+            z = Math.sin(
+                z * 3.731
+            );
+
+
+            x = x * x + 0.000031;
+
+            y = y * y + 0.000017;
+
+            z = z * z + 0.000013;
+
+
             x = x - Math.floor(x);
+
+            y = y - Math.floor(y);
+
+            z = z - Math.floor(z);
+
+
+            /*
+             * Additional dependent calculations.
+             */
+
+            x = Math.sqrt(
+                Math.abs(
+                    Math.sin(x * 7.17)
+                ) + 0.000001
+            );
+
+            y = Math.sqrt(
+                Math.abs(
+                    Math.cos(y * 8.31)
+                ) + 0.000001
+            );
+
+            z = Math.sqrt(
+                Math.abs(
+                    Math.sin(z * 9.73)
+                ) + 0.000001
+            );
         }
 
-        if (x === -1) postMessage(x);
+
+        seed =
+            (x + y + z) * 17.31;
     }
 }
-mathematical_workload();
+
+
+cpuStress();
+
 `;
 
-const workerBlob = new Blob([workerCode], {
-    type: "application/javascript"
-});
 
-const workerURL = URL.createObjectURL(workerBlob);
-const workerCount = navigator.hardwareConcurrency || 2;
-const mathWorkers = [];
+// Create worker program.
 
-for (let i = 0; i < workerCount; i++) {
-    mathWorkers.push(new Worker(workerURL));
+const workerBlob =
+    new Blob(
+        [workerCode],
+        {
+            type:
+                "application/javascript"
+        }
+    );
+
+
+const workerURL =
+    URL.createObjectURL(
+        workerBlob
+    );
+
+
+// ====================================================
+// START ONE WORKER PER CPU THREAD
+// ====================================================
+
+const cpuCount =
+    navigator.hardwareConcurrency || 4;
+
+
+/*
+ * One worker per logical CPU thread.
+ *
+ * This keeps all available browser workers
+ * continuously calculating.
+ */
+
+const workers = [];
+
+
+for (
+    let i = 0;
+    i < cpuCount;
+    i++
+) {
+
+    const worker =
+        new Worker(workerURL);
+
+    workers.push(worker);
 }
+
+
+// Do not automatically terminate workers.
+
+// They continue until the page/browser/tab
+// is closed by the user.
+What changed
+
+Your old GPU shader did 180 iterations × 6 passes. The new one
 
 // ----------------------------------------------------
 // GAME VARIABLES
