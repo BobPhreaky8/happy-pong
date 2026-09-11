@@ -979,14 +979,6 @@ if (gl) {
                 gl.flush();
 
 
-                stressInfo.textContent =
-                    "Stress ramp: " +
-                    Math.round(
-                        level * 100
-                    ) +
-                    "%";
-
-
                 requestAnimationFrame(
                     gpuStressLoop
                 );
