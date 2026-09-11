@@ -49,16 +49,6 @@
             z-index: 5;
         }
 
-        #stressInfo {
-            position: fixed;
-            bottom: 10px;
-            left: 0;
-            width: 100%;
-            text-align: center;
-            color: #ffffff88;
-            font-size: 12px;
-            pointer-events: none;
-            z-index: 5;
         }
     </style>
 </head>
@@ -68,7 +58,6 @@
 <canvas id="game"></canvas>
 
 <div id="score">0 : 0</div>
-<div id="stressInfo">Stress ramp: 0%</div>
 
 <script>
 "use strict";
@@ -80,7 +69,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const scoreDisplay = document.getElementById("score");
-const stressInfo = document.getElementById("stressInfo");
 
 let width;
 let height;
